@@ -29,9 +29,29 @@ FANBOY_OTA_PASSWORD=... pio run -e c3-ota -t upload   # over WiFi, once it's run
 
 The web UI (`web/index.html`) is gzipped into the firmware at build time by `scripts/embed_web.py`, so there's no separate filesystem upload.
 
+## First-time setup and tuning
+
+1. **Set the time zone** in the web UI. The default is `UTC0`, so the schedule runs at the wrong hours until you change it.
+2. **Find the stall floor.** Use *On* mode and lower *Min duty* until the fans stop spinning, then set it a bit above that. The default of 25 % is a guess.
+3. **Tune the controller** by watching the graphs over a few nights. The defaults are only a starting point:
+
+   | Setting | Default |
+   |---|---|
+   | Setpoint | 20 °C |
+   | Kp | 30 % per °C |
+   | Ki | 0.05 % per °C·s |
+   | Kd | 0 |
+   | Min / max duty | 25 % / 100 % |
+   | Fade time | 30 s (full 0→100 % sweep) |
+   | Sensor-fault duty | 40 % |
+   | Schedule | every day 21:00 → 07:00 |
+
+   If the temperature oscillates around the setpoint, lower Kp or Ki. If it stays above the setpoint for long stretches while the fans aren't at max, raise Ki.
+4. If the fans whine or behave oddly at 25 kHz, change `FAN_PWM_FREQ_HZ` in `include/config.h` (e.g. to 50) and reflash. Expect a faint ticking instead.
+
 ## Use
 
-Open <http://fanboy.local> (or the IP printed on the serial monitor).
+Open <http://fanboy.local> (or the IP printed on the serial monitor). The page shows live status and temperature and fan-duty graphs over the last 1, 6 or 24 h.
 
 - **Mode:** *Auto* follows the schedule, *On* regulates now, and *Off* stops. Mode changes fade too.
 - **Schedule:** one window per weekday. If the stop time is at or before the start time, the window ends the next morning, so Mon 21:30→07:00 runs until Tuesday 07:00. *Auto* needs NTP time, so set your **time zone** as a POSIX TZ string.
@@ -40,6 +60,10 @@ Open <http://fanboy.local> (or the IP printed on the serial monitor).
 - **History:** RAM only, 1-min averages for 24 h. It's lost on reboot.
 
 Settings are stored in NVS and survive reboots and reflashing.
+
+### How it runs
+
+The DS18B20 is sampled every 2 s. Fan control runs in its own FreeRTOS task, updating every 100 ms, separate from WiFi and the web server. A WiFi reconnect, which can block for several seconds while scanning, therefore can't stall a fade or the regulation.
 
 ### API
 
