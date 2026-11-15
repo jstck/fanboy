@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fanboy</title>
+<style>
+:root {
+  --bg: #f4f5f7; --card: #fff; --fg: #1d2129; --muted: #6b7280; --line: #e3e6ea;
+  --accent: #2563eb; --temp: #e2553d; --set: #8a94a6; --duty: #2563eb; --active: rgba(37,99,235,.08);
+  --ok: #15803d; --warn: #b45309; --bad: #b91c1c;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111418; --card: #1a1e24; --fg: #e6e8eb; --muted: #9aa3ae; --line: #2a3038;
+    --accent: #6b9cff; --temp: #ff7a5c; --set: #8a94a6; --duty: #6b9cff; --active: rgba(107,156,255,.10);
+    --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 16px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 15px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
+.meta { color: var(--muted); font-size: 13px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-top: 14px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.tile .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.tile .value { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .sub { color: var(--muted); font-size: 12px; }
+.pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  border: 1px solid currentColor; }
+.pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); } .pill.idle { color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--fg); padding: 7px 16px; font: inherit; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--accent); color: #fff; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+svg.chart { width: 100%; height: 190px; display: block; }
+svg text { fill: var(--muted); font-size: 11px; }
+.grid line { stroke: var(--line); }
+.legend { font-size: 12px; color: var(--muted); display: flex; gap: 14px; }
+.legend i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+form .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 14px; }
+label.f { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--muted); }
+input { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0; }
+input[type=checkbox] { width: 18px; height: 18px; }
+.check { flex-direction: row; align-items: center; gap: 8px; }
+table { width: 100%; border-collapse: collapse; }
+td, th { padding: 5px 4px; text-align: left; font-size: 14px; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+.actions { margin-top: 14px; display: flex; gap: 10px; align-items: center; }
+.btn { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 18px; font: inherit; cursor: pointer; }
+.msg { font-size: 13px; }
+.msg.err { color: var(--bad); } .msg.ok { color: var(--ok); }
+.hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Fanboy <span id="state" class="pill idle">…</span></h1>
+    <span class="meta" id="meta">connecting…</span>
+  </header>
+
+  <section class="card">
+    <div class="tiles">
+      <div class="tile"><div class="label">Temperature</div><div class="value" id="temp">–</div><div class="sub" id="tempSub">&nbsp;</div></div>
+      <div class="tile"><div class="label">Setpoint</div><div class="value" id="setpointTile">–</div><div class="sub">&nbsp;</div></div>
+      <div class="tile"><div class="label">Fan</div><div class="value" id="duty">–</div><div class="sub" id="dutySub">&nbsp;</div></div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <div class="seg" id="modeSeg">
+        <button data-mode="auto">Auto</button><button data-mode="on">On</button><button data-mode="off">Off</button>
+      </div>
+      <span class="meta" id="modeHint"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <h2>History</h2>
+      <div class="seg" id="rangeSeg">
+        <button data-h="1">1 h</button><button data-h="6">6 h</button><button data-h="24">24 h</button>
+      </div>
+    </div>
+    <div class="legend"><span><i style="background:var(--temp)"></i>Temperature</span><span><i style="background:var(--set)"></i>Setpoint</span></div>
+    <svg class="chart" id="tempChart"></svg>
+    <div class="legend" style="margin-top:8px"><span><i style="background:var(--duty)"></i>Fan duty %</span><span><i style="background:var(--active);height:10px"></i>Active</span></div>
+    <svg class="chart" id="dutyChart"></svg>
+  </section>
+
+  <form class="card" id="settingsForm" autocomplete="off">
+    <h2>Control</h2>
+    <div class="fields">
+      <label class="f">Setpoint (°C)<input name="setpoint" type="number" step="0.1"></label>
+      <label class="f">Kp (% per °C)<input name="kp" type="number" step="any"></label>
+      <label class="f">Ki (% per °C·s)<input name="ki" type="number" step="any"></label>
+      <label class="f">Kd (% per °C/s)<input name="kd" type="number" step="any"></label>
+      <label class="f">Min duty % (stall floor)<input name="minDuty" type="number" step="1"></label>
+      <label class="f">Max duty %<input name="maxDuty" type="number" step="1"></label>
+      <label class="f">Fade time (s, 0→100 %)<input name="fadeSec" type="number" step="1"></label>
+      <label class="f">Sensor-fault duty %<input name="fallbackDuty" type="number" step="1"></label>
+      <label class="f check"><input name="allowStop" type="checkbox">Stop fans when cool enough</label>
+    </div>
+    <div class="hint">Without "stop", the fans hold at min duty during the schedule even when the room is cool.</div>
+
+    <h2 style="margin-top:18px">Schedule</h2>
+    <table>
+      <thead><tr><th>Day</th><th>On</th><th>Start</th><th>Stop</th></tr></thead>
+      <tbody id="schedBody"></tbody>
+    </table>
+    <div class="hint">A stop time at or before the start time ends the next morning.</div>
+
+    <h2 style="margin-top:18px">Time zone</h2>
+    <label class="f">POSIX TZ string<input name="tz" type="text" maxlength="63" placeholder="CET-1CEST,M3.5.0,M10.5.0/3"></label>
+    <div class="hint">Examples: <code>CET-1CEST,M3.5.0,M10.5.0/3</code> (Central Europe), <code>GMT0BST,M3.5.0/1,M10.5.0</code> (UK),
+      <code>EST5EDT,M3.2.0,M11.1.0</code> (US Eastern), <code>UTC0</code>.</div>
+
+    <div class="actions"><button class="btn" type="submit">Save</button><span class="msg" id="saveMsg"></span></div>
+  </form>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const STATE = {
+  idle: ["Idle", "idle"], fading_in: ["Fading in", "ok"], regulating: ["Regulating", "ok"],
+  standby: ["Standby", "idle"], fading_out: ["Fading out", "warn"], fault: ["Sensor fault", "bad"],
+};
+const POLL_MS = 2000, HISTORY_MS = 60000, GAP_MS = 150000;
+
+let hist = [], live = [], rangeH = 6, setpoint = null;
+try { rangeH = +localStorage.getItem("rangeH") || 6; } catch (e) {}
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+// ---------- status ----------
+function fmtUptime(s) {
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return (d ? d + "d " : "") + h + "h " + m + "m";
+}
+
+function renderStatus(s) {
+  const [label, cls] = STATE[s.state] || [s.state, "idle"];
+  $("state").textContent = label;
+  $("state").className = "pill " + cls;
+  $("temp").textContent = s.temp == null ? "–" : s.temp.toFixed(1) + " °C";
+  $("tempSub").textContent = s.sensorFault ? "sensor not responding" : (s.temp == null ? "waiting for sensor" : "");
+  setpoint = s.setpoint;
+  $("setpointTile").textContent = s.setpoint.toFixed(1) + " °C";
+  $("duty").textContent = Math.round(s.duty) + " %";
+  $("dutySub").textContent = Math.abs(s.target - s.duty) > 0.5 ? "→ " + Math.round(s.target) + " %" : "";
+  document.querySelectorAll("#modeSeg button").forEach(b => b.classList.toggle("on", b.dataset.mode === s.mode));
+  $("modeHint").textContent = s.mode === "auto" && !s.timeValid ? "No time sync yet: schedule paused" : "";
+  $("meta").textContent = [s.time || "time not synced", s.ssid ? s.ssid + " (" + s.rssi + " dBm)" : null, "up " + fmtUptime(s.uptime)]
+    .filter(Boolean).join(" · ");
+}
+
+async function pollStatus() {
+  try {
+    const s = await api("/api/status");
+    renderStatus(s);
+    live.push({ t: Date.now(), temp: s.temp, duty: s.duty, active: s.active });
+    const cutoff = Date.now() - 24 * 3600e3;
+    while (live.length && live[0].t < cutoff) live.shift();
+    drawCharts();
+  } catch (e) {
+    $("meta").textContent = "offline (" + e.message + ")";
+  }
+}
+
+async function loadHistory() {
+  try {
+    const h = await api("/api/history");
+    const base = Date.now();
+    hist = h.t.map((t, i) => ({ t: base - (h.now - t) * 1000, temp: h.temp[i], duty: h.duty[i], active: !!h.active[i] }));
+    const last = hist.length ? hist[hist.length - 1].t : 0;
+    live = live.filter(p => p.t > last);
+    drawCharts();
+  } catch (e) { /* retried on next interval */ }
+}
+
+// ---------- charts ----------
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+function pathFor(points, key, x, y) {
+  let d = "", prevT = null;
+  for (const p of points) {
+    const v = p[key];
+    if (v == null) { prevT = null; continue; }
+    const move = prevT == null || p.t - prevT > GAP_MS;
+    d += (move ? "M" : "L") + x(p.t).toFixed(1) + " " + y(v).toFixed(1);
+    prevT = p.t;
+  }
+  return d;
+}
+
+function niceStep(span, target) {
+  const raw = span / target, pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (raw <= m * pow) return m * pow;
+  return 10 * pow;
+}
+
+function drawChart(svg, points, opts) {
+  const W = svg.clientWidth || 600, H = svg.clientHeight || 190;
+  const L = 38, R = 8, T = 8, B = 20;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = "";
+  const t1 = Date.now(), t0 = t1 - rangeH * 3600e3;
+  const vis = points.filter(p => p.t >= t0 - GAP_MS);
+  let lo = opts.min, hi = opts.max;
+  if (lo == null) {
+    const vals = vis.map(p => p[opts.key]).filter(v => v != null);
+    if (opts.extra != null) vals.push(opts.extra);
+    lo = vals.length ? Math.min(...vals) : 18; hi = vals.length ? Math.max(...vals) : 24;
+    const pad = Math.max(0.5, (hi - lo) * 0.1); lo -= pad; hi += pad;
+  }
+  const x = t => L + (t - t0) / (t1 - t0) * (W - L - R);
+  const y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+
+  // active shading
+  if (opts.shade) {
+    let start = null, prev = null;
+    const flush = end => { if (start != null) el("rect", { x: x(start), y: T, width: Math.max(1, x(end) - x(start)), height: H - T - B, fill: "var(--active)" }, svg); start = null; };
+    for (const p of vis) {
+      if (start != null && (!p.active || p.t - prev.t > GAP_MS)) flush(prev.t);
+      if (p.active && start == null) start = p.t;
+      prev = p;
+    }
+    if (prev) flush(prev.t);
+  }
+
+  const g = el("g", { class: "grid" }, svg);
+  const ys = niceStep(hi - lo, 4);
+  for (let v = Math.ceil(lo / ys) * ys; v <= hi; v += ys) {
+    el("line", { x1: L, x2: W - R, y1: y(v), y2: y(v) }, g);
+    el("text", { x: L - 5, y: y(v) + 4, "text-anchor": "end" }, svg).textContent = +v.toFixed(2) + (opts.unit || "");
+  }
+  const stepH = rangeH <= 1 ? 0.25 : rangeH <= 6 ? 1 : 3;
+  const stepMs = stepH * 3600e3;
+  for (let t = Math.ceil(t0 / stepMs) * stepMs; t <= t1; t += stepMs) {
+    el("line", { x1: x(t), x2: x(t), y1: T, y2: H - B }, g);
+    const d = new Date(t);
+    el("text", { x: x(t), y: H - 5, "text-anchor": "middle" }, svg).textContent =
+      String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+
+  if (opts.extra != null)
+    el("line", { x1: L, x2: W - R, y1: y(opts.extra), y2: y(opts.extra), stroke: "var(--set)", "stroke-dasharray": "4 4", "stroke-width": 1.5 }, svg);
+  el("path", { d: pathFor(vis, opts.key, x, y), fill: "none", stroke: opts.color, "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+}
+
+function drawCharts() {
+  const pts = hist.concat(live);
+  drawChart($("tempChart"), pts, { key: "temp", color: "var(--temp)", extra: setpoint, unit: "°" });
+  drawChart($("dutyChart"), pts, { key: "duty", color: "var(--duty)", min: 0, max: 100, shade: true, unit: "%" });
+}
+
+// ---------- mode & range ----------
+document.querySelectorAll("#modeSeg button").forEach(b => b.addEventListener("click", async () => {
+  try { await api("/api/settings", { mode: b.dataset.mode }); pollStatus(); }
+  catch (e) { $("modeHint").textContent = "Error: " + e.message; }
+}));
+
+function renderRange() {
+  document.querySelectorAll("#rangeSeg button").forEach(b => b.classList.toggle("on", +b.dataset.h === rangeH));
+}
+document.querySelectorAll("#rangeSeg button").forEach(b => b.addEventListener("click", () => {
+  rangeH = +b.dataset.h;
+  try { localStorage.setItem("rangeH", rangeH); } catch (e) {}
+  renderRange(); drawCharts();
+}));
+
+// ---------- settings form ----------
+const form = $("settingsForm");
+const NUM_FIELDS = ["setpoint", "kp", "ki", "kd", "minDuty", "maxDuty", "fadeSec", "fallbackDuty"];
+
+function buildSchedule() {
+  $("schedBody").innerHTML = DAYS.map((d, i) =>
+    `<tr><td>${d}</td><td><input type="checkbox" name="en${i}"></td>` +
+    `<td><input type="time" name="start${i}" required></td><td><input type="time" name="stop${i}" required></td></tr>`).join("");
+}
+
+function fillForm(s) {
+  for (const k of NUM_FIELDS) form.elements[k].value = s[k];
+  form.elements.allowStop.checked = s.allowStop;
+  form.elements.tz.value = s.tz;
+  s.schedule.forEach((d, i) => {
+    form.elements["en" + i].checked = d.en;
+    form.elements["start" + i].value = d.start;
+    form.elements["stop" + i].value = d.stop;
+  });
+}
+
+form.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const body = { allowStop: form.elements.allowStop.checked, tz: form.elements.tz.value.trim(), schedule: [] };
+  for (const k of NUM_FIELDS) body[k] = parseFloat(form.elements[k].value);
+  for (let i = 0; i < 7; i++)
+    body.schedule.push({ en: form.elements["en" + i].checked, start: form.elements["start" + i].value, stop: form.elements["stop" + i].value });
+  const msg = $("saveMsg");
+  try {
+    fillForm(await api("/api/settings", body));
+    msg.className = "msg ok"; msg.textContent = "Saved";
+    pollStatus();
+  } catch (e) {
+    msg.className = "msg err"; msg.textContent = e.message;
+  }
+  setTimeout(() => { if (msg.textContent === "Saved") msg.textContent = ""; }, 3000);
+});
+
+// ---------- start ----------
+buildSchedule();
+renderRange();
+api("/api/settings").then(fillForm).catch(() => {});
+loadHistory();
+pollStatus();
+setInterval(pollStatus, POLL_MS);
+setInterval(loadHistory, HISTORY_MS);
+window.addEventListener("resize", drawCharts);
+</script>
+</body>
+</html>
