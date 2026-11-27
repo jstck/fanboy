@@ -1,6 +1,6 @@
 #pragma once
 
-// ---- Pins (ESP32-C3; avoid strapping pins 2, 8, 9) ----
+// ---- Pins (ESP32-C6-Zero; see hwtest/include/hwtest_config.example.h for pin notes) ----
 #define PIN_DS18B20 4  // DS18B20 data, 4.7k pull-up to 3.3V
 #define PIN_FAN 5      // MOSFET gate (via ~100R, 10k pull-down to GND)
 
