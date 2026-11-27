@@ -62,7 +62,7 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 <main>
   <header>
     <h1>Fanboy <span id="state" class="pill idle">…</span></h1>
-    <span class="meta" id="meta">connecting…</span>
+    <span class="meta"><span id="meta">connecting…</span> · <a href="/test" style="color:var(--accent)">Test page</a></span>
   </header>
 
   <section class="card">
@@ -150,7 +150,7 @@ function fmtUptime(s) {
 }
 
 function renderStatus(s) {
-  const [label, cls] = STATE[s.state] || [s.state, "idle"];
+  const [label, cls] = s.test && s.test.active ? ["Test mode (manual)", "warn"] : STATE[s.state] || [s.state, "idle"];
   $("state").textContent = label;
   $("state").className = "pill " + cls;
   $("temp").textContent = s.temp == null ? "–" : s.temp.toFixed(1) + " °C";

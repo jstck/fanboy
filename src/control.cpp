@@ -131,6 +131,8 @@ void controlTask(void*) {
     TachMeter tach;
     uint32_t last = millis(), lastTach = last;
     uint32_t nextHistory = app::uptimeSec() + HISTORY_INTERVAL_SEC;
+    bool wasTesting = false;
+    float testOutput = 0;  // effective duty during test mode (0 with the switch off)
     TickType_t wake = xTaskGetTickCount();
 
     for (;;) {
@@ -170,14 +172,31 @@ void controlTask(void*) {
                 in.minuteOfDay = lt.tm_hour * 60 + lt.tm_min;
             }
 
+            const uint64_t nowMs64 = app::nowMs();
+            const bool testing = app::test.active(nowMs64);
+            if (testing != wasTesting) {
+                wasTesting = testing;
+                Serial.println(testing ? "test mode: on (manual control)" : "test mode: off, back to automatic");
+                // Fade from wherever test mode left the fan.
+                if (!testing) controller.resumeFrom(testOutput);
+            }
+
+            // The controller keeps running in test mode (sensor reading, fault
+            // detection), but its output is only used outside test mode.
             const State prev = controller.state();
             controller.update(app::settings, in);
-            if (controller.state() != prev)
+            if (controller.state() != prev && !testing)
                 Serial.printf("state: %s -> %s\n", stateName(prev), stateName(controller.state()));
 
-            duty = controller.duty();
-            // 4-pin fans keep spinning at 0 % PWM, so cut the supply when idle.
-            fanOn = duty > 0;
+            if (testing) {
+                duty = app::test.duty;
+                fanOn = app::test.on;
+                testOutput = fanOn ? duty : 0;
+            } else {
+                duty = controller.duty();
+                // 4-pin fans keep spinning at 0 % PWM, so cut the supply when idle.
+                fanOn = duty > 0;
+            }
             invert = app::settings.pwmInvert;
 
             app::Status& s = app::status;
@@ -193,6 +212,8 @@ void controlTask(void*) {
             s.pidOutput = controller.pidOutput();
             s.state = controller.state();
             s.active = controller.active();
+            s.testActive = testing;
+            s.testRemainingMs = testing ? (uint32_t)(app::test.untilMs - nowMs64) : 0;
             s.rpm = tach.rpm(app::settings.tachPpr);
             s.tachHz = tach.hz();
             s.tachPulses = pulses;
@@ -200,8 +221,8 @@ void controlTask(void*) {
             s.now = now;
             s.uptimeSec = up;
 
-            avg.add(controller.haveTemp() && !controller.sensorFault(), controller.temp(), duty,
-                    controller.active(), dt);
+            avg.add(controller.haveTemp() && !controller.sensorFault(), controller.temp(), fanOn ? duty : 0,
+                    testing || controller.active(), dt);
             if ((int32_t)(up - nextHistory) >= 0) {
                 app::history.push(avg.take(up));
                 nextHistory += HISTORY_INTERVAL_SEC;

@@ -1,5 +1,5 @@
 .pio/
 .vscode/
 include/secrets.h
-src/web_index.h
+src/web_pages.h
 hwtest/include/hwtest_config.h

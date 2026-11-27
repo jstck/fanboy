@@ -7,6 +7,7 @@ namespace app {
 fancore::Settings settings;
 Status status;
 History history;
+TestMode test;
 
 static SemaphoreHandle_t mutex;
 
@@ -15,6 +16,7 @@ void lock() { xSemaphoreTake(mutex, portMAX_DELAY); }
 void unlock() { xSemaphoreGive(mutex); }
 
 uint32_t uptimeSec() { return (uint32_t)(esp_timer_get_time() / 1000000LL); }
+uint64_t nowMs() { return (uint64_t)(esp_timer_get_time() / 1000LL); }
 
 }  // namespace app
 

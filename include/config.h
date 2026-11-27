@@ -21,6 +21,12 @@
 // ---- Tach ----
 #define TACH_MIN_INTERVAL_US 1000  // ignore tach edges closer than this (noise)
 
+// ---- Test mode ----
+// The test page renews its lease every second. When renewals stop (page
+// closed, laptop asleep, WiFi gone) the firmware returns to automatic control
+// this long after the last one.
+#define TEST_LEASE_MS 5000
+
 // ---- Timing ----
 #define CONTROL_TICK_MS 100         // controller/fader update period
 #define SENSOR_PERIOD_MS 2000       // DS18B20 sample period
