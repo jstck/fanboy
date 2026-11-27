@@ -51,7 +51,14 @@ void handleStatus(AsyncWebServerRequest* req) {
     if (st.haveTemp && !st.sensorFault) doc["temp"] = st.temp;
     else doc["temp"] = nullptr;
     doc["sensorFault"] = st.sensorFault;
+    doc["sensorCount"] = st.sensorCount;
+    doc["sensorId"] = st.sensorId;
     doc["duty"] = st.duty;
+    doc["fanOn"] = st.fanOn;
+    doc["pinDuty"] = st.pinDuty;
+    doc["rpm"] = st.rpm;
+    doc["tachHz"] = st.tachHz;
+    doc["tachPulses"] = st.tachPulses;
     doc["target"] = st.target;
     doc["pid"] = st.pidOutput;
     doc["state"] = stateName(st.state);

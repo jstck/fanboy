@@ -6,6 +6,7 @@
 #include "pid.h"
 #include "schedule.h"
 #include "settings_json.h"
+#include "tach.h"
 
 using namespace fancore;
 
@@ -258,6 +259,87 @@ void test_controller_allow_stop_hysteresis() {
     TEST_ASSERT_FLOAT_WITHIN(0.01, 30, c.duty());
 }
 
+void test_controller_resume_fades_out_when_off() {
+    Controller c;
+    Settings s = testSettings();
+    s.mode = Mode::Off;
+    run(c, s, 3, hm(22, 0), 22);
+    c.resumeFrom(80);  // test mode left the fan at 80 %
+    c.update(s, tick(hm(22, 0), 22));
+    TEST_ASSERT_EQUAL(State::FadingOut, c.state());
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 70, c.duty());  // 10 %/s from 80, no jump
+    run(c, s, 8, hm(22, 0), 22);
+    TEST_ASSERT_EQUAL(State::Idle, c.state());
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 0, c.duty());
+}
+
+void test_controller_resume_fades_to_pid_target() {
+    Controller c;
+    Settings s = testSettings();
+    s.mode = Mode::On;
+    run(c, s, 20, hm(12, 0), 22);  // regulating at 60 %
+    TEST_ASSERT_EQUAL(State::Regulating, c.state());
+    c.resumeFrom(10);
+    c.update(s, tick(hm(12, 0), 22));
+    TEST_ASSERT_EQUAL(State::FadingIn, c.state());
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 20, c.duty());  // from 10, not from 60 or 0
+    run(c, s, 5, hm(12, 0), 22);
+    TEST_ASSERT_EQUAL(State::Regulating, c.state());
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 60, c.duty());
+}
+
+// ---------- tach ----------
+
+// Feeds the meter one update per second of a fan pulsing at `hz`, starting
+// from the given counter state. Returns the micros() of the last pulse.
+static uint32_t pulse(TachMeter& m, uint32_t& count, uint32_t& us, uint32_t& ms, float hz, int seconds) {
+    const uint32_t period = (uint32_t)(1e6f / hz);
+    for (int s = 0; s < seconds; s++) {
+        const uint32_t n = (uint32_t)hz;
+        count += n;
+        us += n * period;
+        ms += 1000;
+        m.update(count, us, ms);
+    }
+    return us;
+}
+
+void test_tach_rpm_and_ppr() {
+    TachMeter m;
+    uint32_t count = 0, us = 0, ms = 0;
+    pulse(m, count, us, ms, 40, 3);  // 40 Hz
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 40, m.hz());
+    TEST_ASSERT_FLOAT_WITHIN(0.1, 1200, m.rpm(2));
+    TEST_ASSERT_FLOAT_WITHIN(0.1, 600, m.rpm(4));
+}
+
+void test_tach_micros_wrap() {
+    TachMeter m;
+    uint32_t count = 0, us = 0xFFFFFFFFu - 1500000u, ms = 0;  // wraps during the run
+    pulse(m, count, us, ms, 50, 4);
+    TEST_ASSERT_TRUE(us < 0xFFFFFFFFu - 1500000u);  // did wrap
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 50, m.hz());
+}
+
+void test_tach_stop_and_restart() {
+    TachMeter m;
+    uint32_t count = 0, us = 0, ms = 0;
+    pulse(m, count, us, ms, 40, 3);
+    // No pulses: still reports the last speed briefly, then 0.
+    for (int i = 0; i < 2; i++) m.update(count, us, ms += 1000);
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 40, m.hz());
+    m.update(count, us, ms += 1000);
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 0, m.hz());
+    // A minute later it restarts. The first update only takes a baseline
+    // (no bogus low reading measured from the old pulse), the next is exact.
+    ms += 60000;
+    us += 60000000;
+    pulse(m, count, us, ms, 20, 1);
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 0, m.hz());
+    pulse(m, count, us, ms, 20, 1);
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 20, m.hz());
+}
+
 // ---------- history ----------
 
 void test_ring_overwrites_oldest() {
@@ -299,6 +381,13 @@ void test_settings_roundtrip() {
     TEST_ASSERT_FALSE(back.schedule.days[3].enabled);
     TEST_ASSERT_EQUAL(hm(22, 15), back.schedule.days[3].startMin);
     TEST_ASSERT_EQUAL(hm(6, 45), back.schedule.days[3].stopMin);
+
+    s.pwmInvert = false;
+    s.tachPpr = 4;
+    settingsToJson(s, doc.to<JsonObject>());
+    TEST_ASSERT_EQUAL_STRING("", settingsFromJson(doc.as<JsonObjectConst>(), Settings{}, back).c_str());
+    TEST_ASSERT_FALSE(back.pwmInvert);
+    TEST_ASSERT_EQUAL(4, back.tachPpr);
 }
 
 static std::string applyJson(const char* json, Settings& out) {
@@ -320,6 +409,10 @@ void test_settings_partial_update_and_rejects() {
     TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"setpoint\":\"hot\"}", untouched).size());
     TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"mode\":\"turbo\"}", untouched).size());
     TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"schedule\":[{}]}", untouched).size());
+    TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"tachPpr\":0}", untouched).size());
+    TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"tachPpr\":9}", untouched).size());
+    TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"tachPpr\":2.5}", untouched).size());
+    TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"pwmInvert\":1}", untouched).size());
     TEST_ASSERT_NOT_EQUAL(0, applyJson(
         "{\"schedule\":[{\"start\":\"25:00\"},{},{},{},{},{},{}]}", untouched).size());
     TEST_ASSERT_FLOAT_WITHIN(0.001, 12, untouched.setpoint);  // failed updates don't write
@@ -349,6 +442,11 @@ int main() {
     RUN_TEST(test_controller_auto_needs_time_sync);
     RUN_TEST(test_controller_sensor_fault_fallback);
     RUN_TEST(test_controller_allow_stop_hysteresis);
+    RUN_TEST(test_controller_resume_fades_out_when_off);
+    RUN_TEST(test_controller_resume_fades_to_pid_target);
+    RUN_TEST(test_tach_rpm_and_ppr);
+    RUN_TEST(test_tach_micros_wrap);
+    RUN_TEST(test_tach_stop_and_restart);
     RUN_TEST(test_ring_overwrites_oldest);
     RUN_TEST(test_history_averager);
     RUN_TEST(test_settings_roundtrip);

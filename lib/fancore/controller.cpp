@@ -16,6 +16,13 @@ const char* stateName(State s) {
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
+void Controller::resumeFrom(float duty) {
+    fader_.set(clampf(duty, 0, 100));
+    active_ = false;  // so the next update() re-initialises like a new activation
+    fadingIn_ = false;
+    stopped_ = false;
+}
+
 void Controller::update(const Settings& s, const ControlInput& in) {
     const float dt = in.dt > 0 ? in.dt : 0;
     pidDt_ += dt;

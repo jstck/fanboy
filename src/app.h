@@ -17,7 +17,14 @@ struct Status {
     bool haveTemp = false;
     float temp = 0;
     bool sensorFault = false;
-    float duty = 0;
+    int sensorCount = 0;
+    char sensorId[24] = "";  // ROM ID of the sensor in use, hex bytes
+    float duty = 0;          // % as seen by the fan
+    bool fanOn = false;      // supply switch
+    float pinDuty = 0;       // % on the PWM GPIO (after inversion)
+    float rpm = 0;
+    float tachHz = 0;
+    uint32_t tachPulses = 0;  // since boot
     float target = 0;
     float pidOutput = 0;
     fancore::State state = fancore::State::Idle;

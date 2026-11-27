@@ -70,6 +70,7 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
       <div class="tile"><div class="label">Temperature</div><div class="value" id="temp">–</div><div class="sub" id="tempSub">&nbsp;</div></div>
       <div class="tile"><div class="label">Setpoint</div><div class="value" id="setpointTile">–</div><div class="sub">&nbsp;</div></div>
       <div class="tile"><div class="label">Fan</div><div class="value" id="duty">–</div><div class="sub" id="dutySub">&nbsp;</div></div>
+      <div class="tile"><div class="label">Fan speed</div><div class="value" id="rpm">–</div><div class="sub" id="rpmSub">&nbsp;</div></div>
     </div>
     <div class="row" style="margin-top:14px">
       <div class="seg" id="modeSeg">
@@ -99,13 +100,13 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
       <label class="f">Kp (% per °C)<input name="kp" type="number" step="any"></label>
       <label class="f">Ki (% per °C·s)<input name="ki" type="number" step="any"></label>
       <label class="f">Kd (% per °C/s)<input name="kd" type="number" step="any"></label>
-      <label class="f">Min duty % (stall floor)<input name="minDuty" type="number" step="1"></label>
+      <label class="f">Min duty %<input name="minDuty" type="number" step="1"></label>
       <label class="f">Max duty %<input name="maxDuty" type="number" step="1"></label>
       <label class="f">Fade time (s, 0→100 %)<input name="fadeSec" type="number" step="1"></label>
       <label class="f">Sensor-fault duty %<input name="fallbackDuty" type="number" step="1"></label>
       <label class="f check"><input name="allowStop" type="checkbox">Stop fans when cool enough</label>
     </div>
-    <div class="hint">Without "stop", the fans hold at min duty during the schedule even when the room is cool.</div>
+    <div class="hint">Min duty is the lowest duty used while regulating. Without "stop", the fans hold at min duty during the schedule even when the room is cool. With it, the fan supply is switched off.</div>
 
     <h2 style="margin-top:18px">Schedule</h2>
     <table>
@@ -157,7 +158,9 @@ function renderStatus(s) {
   setpoint = s.setpoint;
   $("setpointTile").textContent = s.setpoint.toFixed(1) + " °C";
   $("duty").textContent = Math.round(s.duty) + " %";
-  $("dutySub").textContent = Math.abs(s.target - s.duty) > 0.5 ? "→ " + Math.round(s.target) + " %" : "";
+  $("dutySub").textContent = Math.abs(s.target - s.duty) > 0.5 ? "→ " + Math.round(s.target) + " %" : (s.fanOn ? "" : "supply off");
+  $("rpm").textContent = Math.round(s.rpm) + " rpm";
+  $("rpmSub").textContent = s.fanOn && s.rpm === 0 ? "no tach signal" : "";
   document.querySelectorAll("#modeSeg button").forEach(b => b.classList.toggle("on", b.dataset.mode === s.mode));
   $("modeHint").textContent = s.mode === "auto" && !s.timeValid ? "No time sync yet: schedule paused" : "";
   $("meta").textContent = [s.time || "time not synced", s.ssid ? s.ssid + " (" + s.rssi + " dBm)" : null, "up " + fmtUptime(s.uptime)]

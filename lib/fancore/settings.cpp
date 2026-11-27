@@ -34,6 +34,7 @@ std::string validate(const Settings& s) {
     if (s.minDuty > s.maxDuty) return "minDuty must be <= maxDuty";
     if (!inRange(s.fadeSec, 0, 600)) return "fadeSec must be 0..600";
     if (!inRange(s.fallbackDuty, 0, 100)) return "fallbackDuty must be 0..100";
+    if (s.tachPpr < 1 || s.tachPpr > 8) return "tachPpr must be 1..8";
     if (s.tz.empty() || s.tz.size() > 63) return "tz must be 1..63 chars";
     for (const auto& d : s.schedule.days)
         if (d.startMin >= 24 * 60 || d.stopMin >= 24 * 60) return "schedule times must be 00:00..23:59";

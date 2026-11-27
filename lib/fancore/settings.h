@@ -19,11 +19,15 @@ struct Settings {
     float ki = 0.05f;
     float kd = 0.0f;
 
-    float minDuty = 25.0f;   // stall floor of the fans, %
+    float minDuty = 25.0f;   // lowest duty used while regulating, %
     float maxDuty = 100.0f;  // %
     float fadeSec = 30.0f;   // time for a full 0 -> 100 % sweep
     bool allowStop = false;  // stop the fans when no cooling is needed (instead of holding minDuty)
     float fallbackDuty = 40.0f;  // used while active if the sensor fails
+
+    // Hardware
+    bool pwmInvert = true;  // PWM goes through an inverting (open-collector) driver
+    int tachPpr = 2;        // tach pulses per fan revolution
 
     Mode mode = Mode::Auto;
     std::string tz = "UTC0";  // POSIX TZ string, e.g. "CET-1CEST,M3.5.0,M10.5.0/3"

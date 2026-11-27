@@ -29,6 +29,8 @@ void settingsToJson(const Settings& s, JsonObject o) {
     o["fadeSec"] = s.fadeSec;
     o["allowStop"] = s.allowStop;
     o["fallbackDuty"] = s.fallbackDuty;
+    o["pwmInvert"] = s.pwmInvert;
+    o["tachPpr"] = s.tachPpr;
     o["mode"] = modeName(s.mode);
     o["tz"] = s.tz.c_str();
     JsonArray days = o["schedule"].to<JsonArray>();
@@ -66,6 +68,14 @@ std::string settingsFromJson(JsonObjectConst in, const Settings& current, Settin
     if (!in["allowStop"].isNull()) {
         if (!in["allowStop"].is<bool>()) return "allowStop must be true/false";
         s.allowStop = in["allowStop"].as<bool>();
+    }
+    if (!in["pwmInvert"].isNull()) {
+        if (!in["pwmInvert"].is<bool>()) return "pwmInvert must be true/false";
+        s.pwmInvert = in["pwmInvert"].as<bool>();
+    }
+    if (!in["tachPpr"].isNull()) {
+        if (!in["tachPpr"].is<int>()) return "tachPpr must be a whole number";
+        s.tachPpr = in["tachPpr"].as<int>();
     }
     if (!in["mode"].isNull()) {
         if (!modeFromName(in["mode"].as<const char*>(), s.mode)) return "mode must be auto/on/off";
