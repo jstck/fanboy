@@ -71,6 +71,17 @@ The DS18B20 is sampled every 2 s. Fan control runs in its own FreeRTOS task, upd
 - `GET /api/history`: 24 h of 1-min samples, with `t` as device uptime in seconds.
 - `GET /api/settings` / `POST /api/settings`: JSON. Partial updates are fine, for example `{"mode":"off"}` or `{"setpoint":19.5}`.
 
+## Hardware test firmware
+
+`hwtest/` is a separate, minimal firmware for checking the wiring on a breadboard: it shows the DS18B20 reading and lets you switch a 4-pin fan on and off, set its PWM duty (25 kHz) and see its tach speed. It has no regulation and no schedule.
+
+```sh
+cp hwtest/include/hwtest_config.example.h hwtest/include/hwtest_config.h   # WiFi, DHCP/static IP, pins, polarities
+pio run -d hwtest -t upload && pio device monitor -d hwtest
+```
+
+Then open `http://fanboy-test.local` or the IP shown on the serial monitor. *Pulses per revolution* (default 2) and *Invert PWM output* (for an inverting driver stage such as an open-collector transistor) are set in the UI and kept across reboots. The config file also has notes on which ESP32-C6-Zero pins to use.
+
 ## Tests
 
 The control logic (schedule, PI, fader, controller state machine, settings validation) is plain C++ in `lib/fancore` and is tested on the host:

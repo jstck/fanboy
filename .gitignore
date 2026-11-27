@@ -2,3 +2,4 @@
 .vscode/
 include/secrets.h
 src/web_index.h
+hwtest/include/hwtest_config.h
