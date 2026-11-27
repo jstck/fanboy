@@ -1,6 +1,6 @@
 # Fanboy
 
-ESP32-C3 firmware that cools a bedroom by blowing in fresh air with 12 V PC fans.
+ESP32-C6 firmware that cools a bedroom by blowing in fresh air with 12 V PC fans.
 Inside a weekly night-time schedule, a PI controller adjusts the fan speed toward a set temperature measured by a DS18B20, fading in and out smoothly. A web UI shows live status, 24 h graphs and all settings.
 
 ## Hardware
@@ -21,8 +21,8 @@ Inside a weekly night-time schedule, a PI controller adjusts the fan speed towar
 
 ```sh
 cp include/secrets.example.h include/secrets.h   # then fill in WiFi networks + OTA password
-pio run -e c3 -t upload && pio device monitor     # USB
-FANBOY_OTA_PASSWORD=... pio run -e c3-ota -t upload   # over WiFi, once it's running
+pio run -e c6 -t upload && pio device monitor     # USB
+FANBOY_OTA_PASSWORD=... pio run -e c6-ota -t upload   # over WiFi, once it's running
 ```
 
 `secrets.h` can list any number of networks (home, bedroom, …). The device joins the strongest one in range and reconnects or switches by itself.
