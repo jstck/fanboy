@@ -16,6 +16,13 @@ const char* stateName(State s) {
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
+void Controller::resumeFrom(float duty) {
+    fader_.set(clampf(duty, 0, 100));
+    active_ = false;  // so the next update() re-initialises like a new activation
+    fadingIn_ = false;
+    stopped_ = false;
+}
+
 void Controller::update(const Settings& s, const ControlInput& in) {
     const float dt = in.dt > 0 ? in.dt : 0;
     pidDt_ += dt;
@@ -63,7 +70,10 @@ void Controller::update(const Settings& s, const ControlInput& in) {
         target_ = 0;  // waiting for the first reading after boot
     } else {
         if (in.newSample && in.sampleValid) {
-            raw_ = pid_.update(temp_, s.setpoint, pidDt_);
+            // The PID gives more output the further the measurement is above the
+            // setpoint. For heating, mirror both so being below it does that.
+            const float sign = s.direction == Direction::Heat ? -1.0f : 1.0f;
+            raw_ = pid_.update(sign * temp_, sign * s.setpoint, pidDt_);
             pidDt_ = 0;
         }
 
@@ -85,7 +95,7 @@ void Controller::update(const Settings& s, const ControlInput& in) {
         target_ = stopped_ ? 0 : clampf(raw_, s.minDuty, s.maxDuty);
     }
 
-    const float d = fader_.step(target_, dt, s.fadeSec);
+    const float d = fader_.step(target_, dt, s.fadeSec, s.minDuty);
     if (fadingIn_ && d >= target_ - 0.01f && target_ > 0) fadingIn_ = false;
 
     if (!active_) state_ = d > 0 ? State::FadingOut : State::Idle;

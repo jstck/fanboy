@@ -45,9 +45,9 @@ svg text { fill: var(--muted); font-size: 11px; }
 .legend i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
 form .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 14px; }
 label.f { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--muted); }
-input { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0; }
+input, select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0; }
 input[type=checkbox] { width: 18px; height: 18px; }
-.check { flex-direction: row; align-items: center; gap: 8px; }
+label.f.check { flex-direction: row; align-items: center; gap: 8px; }
 table { width: 100%; border-collapse: collapse; }
 td, th { padding: 5px 4px; text-align: left; font-size: 14px; }
 th { color: var(--muted); font-weight: 500; font-size: 12px; }
@@ -62,7 +62,7 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 <main>
   <header>
     <h1>Fanboy <span id="state" class="pill idle">…</span></h1>
-    <span class="meta" id="meta">connecting…</span>
+    <span class="meta"><span id="meta">connecting…</span> · <a href="/test" style="color:var(--accent)">Test page</a></span>
   </header>
 
   <section class="card">
@@ -70,6 +70,7 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
       <div class="tile"><div class="label">Temperature</div><div class="value" id="temp">–</div><div class="sub" id="tempSub">&nbsp;</div></div>
       <div class="tile"><div class="label">Setpoint</div><div class="value" id="setpointTile">–</div><div class="sub">&nbsp;</div></div>
       <div class="tile"><div class="label">Fan</div><div class="value" id="duty">–</div><div class="sub" id="dutySub">&nbsp;</div></div>
+      <div class="tile"><div class="label">Fan speed</div><div class="value" id="rpm">–</div><div class="sub" id="rpmSub">&nbsp;</div></div>
     </div>
     <div class="row" style="margin-top:14px">
       <div class="seg" id="modeSeg">
@@ -96,16 +97,19 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
     <h2>Control</h2>
     <div class="fields">
       <label class="f">Setpoint (°C)<input name="setpoint" type="number" step="0.1"></label>
+      <label class="f">Fans are for<select name="direction">
+        <option value="cool">Cooling</option><option value="heat">Heating</option></select></label>
       <label class="f">Kp (% per °C)<input name="kp" type="number" step="any"></label>
       <label class="f">Ki (% per °C·s)<input name="ki" type="number" step="any"></label>
       <label class="f">Kd (% per °C/s)<input name="kd" type="number" step="any"></label>
-      <label class="f">Min duty % (stall floor)<input name="minDuty" type="number" step="1"></label>
+      <label class="f">Min duty %<input name="minDuty" type="number" step="1"></label>
       <label class="f">Max duty %<input name="maxDuty" type="number" step="1"></label>
       <label class="f">Fade time (s, 0→100 %)<input name="fadeSec" type="number" step="1"></label>
       <label class="f">Sensor-fault duty %<input name="fallbackDuty" type="number" step="1"></label>
-      <label class="f check"><input name="allowStop" type="checkbox">Stop fans when cool enough</label>
+      <label class="f check"><input name="allowStop" type="checkbox">Stop fans when not needed</label>
     </div>
-    <div class="hint">Without "stop", the fans hold at min duty during the schedule even when the room is cool.</div>
+    <div class="hint">Cooling: more fan when it's warmer than the setpoint (fresh air into a warm room). Heating: more fan when it's colder.
+      Min duty is the lowest running duty: the fans start and stop there instead of crawling below it, where they may stall. Without "stop", the fans hold at min duty during the schedule even when the setpoint is reached. With it, they stop.</div>
 
     <h2 style="margin-top:18px">Schedule</h2>
     <table>
@@ -149,7 +153,7 @@ function fmtUptime(s) {
 }
 
 function renderStatus(s) {
-  const [label, cls] = STATE[s.state] || [s.state, "idle"];
+  const [label, cls] = s.test && s.test.active ? ["Test mode (manual)", "warn"] : STATE[s.state] || [s.state, "idle"];
   $("state").textContent = label;
   $("state").className = "pill " + cls;
   $("temp").textContent = s.temp == null ? "–" : s.temp.toFixed(1) + " °C";
@@ -157,7 +161,11 @@ function renderStatus(s) {
   setpoint = s.setpoint;
   $("setpointTile").textContent = s.setpoint.toFixed(1) + " °C";
   $("duty").textContent = Math.round(s.duty) + " %";
-  $("dutySub").textContent = Math.abs(s.target - s.duty) > 0.5 ? "→ " + Math.round(s.target) + " %" : "";
+  $("dutySub").textContent = s.kicking ? "kickstart"
+    : Math.abs(s.target - s.duty) > 0.5 ? "→ " + Math.round(s.target) + " %"
+    : s.fanOn ? "" : s.fanType === "4pin" ? "supply off" : "stopped";
+  $("rpm").textContent = Math.round(s.rpm) + " rpm";
+  $("rpmSub").textContent = s.fanOn && s.rpm === 0 ? "no tach signal" : "";
   document.querySelectorAll("#modeSeg button").forEach(b => b.classList.toggle("on", b.dataset.mode === s.mode));
   $("modeHint").textContent = s.mode === "auto" && !s.timeValid ? "No time sync yet: schedule paused" : "";
   $("meta").textContent = [s.time || "time not synced", s.ssid ? s.ssid + " (" + s.rssi + " dBm)" : null, "up " + fmtUptime(s.uptime)]
@@ -298,6 +306,7 @@ function buildSchedule() {
 function fillForm(s) {
   for (const k of NUM_FIELDS) form.elements[k].value = s[k];
   form.elements.allowStop.checked = s.allowStop;
+  form.elements.direction.value = s.direction;
   form.elements.tz.value = s.tz;
   s.schedule.forEach((d, i) => {
     form.elements["en" + i].checked = d.en;
@@ -308,7 +317,8 @@ function fillForm(s) {
 
 form.addEventListener("submit", async (ev) => {
   ev.preventDefault();
-  const body = { allowStop: form.elements.allowStop.checked, tz: form.elements.tz.value.trim(), schedule: [] };
+  const body = { allowStop: form.elements.allowStop.checked, direction: form.elements.direction.value,
+    tz: form.elements.tz.value.trim(), schedule: [] };
   for (const k of NUM_FIELDS) body[k] = parseFloat(form.elements[k].value);
   for (let i = 0; i < 7; i++)
     body.schedule.push({ en: form.elements["en" + i].checked, start: form.elements["start" + i].value, stop: form.elements["stop" + i].value });

@@ -17,14 +17,34 @@ struct Status {
     bool haveTemp = false;
     float temp = 0;
     bool sensorFault = false;
-    float duty = 0;
+    int sensorCount = 0;
+    char sensorId[24] = "";  // ROM ID of the sensor in use, hex bytes
+    float duty = 0;          // % as seen by the fan, including any kickstart
+    bool fanOn = false;      // fan meant to run (4-pin: supply switch requested on)
+    bool switchOn = false;   // supply switch output (always off for 2/3-pin fans)
+    bool kicking = false;    // 2/3-pin kickstart in progress
+    float pinDuty = 0;       // % on the PWM GPIO (after inversion)
+    float rpm = 0;
+    float tachHz = 0;
+    uint32_t tachPulses = 0;  // since boot
     float target = 0;
     float pidOutput = 0;
     fancore::State state = fancore::State::Idle;
     bool active = false;
+    bool testActive = false;
+    uint32_t testRemainingMs = 0;
     bool timeValid = false;
     time_t now = 0;
     uint32_t uptimeSec = 0;
+};
+
+// Manual test mode: active while nowMs() < untilMs. The test page keeps
+// renewing the lease; when it stops, control goes back to the controller.
+struct TestMode {
+    uint64_t untilMs = 0;
+    float duty = 0;   // PWM duty % (as seen by the fan)
+    bool on = false;  // supply switch
+    bool active(uint64_t now) const { return now < untilMs; }
 };
 
 void initLock();
@@ -40,8 +60,10 @@ struct Guard {
 extern fancore::Settings settings;
 extern Status status;
 extern History history;
+extern TestMode test;
 
 uint32_t uptimeSec();
+uint64_t nowMs();  // monotonic, never wraps
 
 // control.cpp
 void startControlTask();

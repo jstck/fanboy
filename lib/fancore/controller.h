@@ -37,6 +37,11 @@ public:
 
     void update(const Settings& s, const ControlInput& in);
 
+    // Take over from an externally set output (manual test mode): the next
+    // update() starts from this duty and fades to whatever it decides, with the
+    // PID restarted as on a fresh activation.
+    void resumeFrom(float duty);
+
     float duty() const { return fader_.value(); }  // % to write to the fan
     float target() const { return target_; }        // % the fader is heading to
     float pidOutput() const { return raw_; }

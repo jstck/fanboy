@@ -8,7 +8,7 @@
 
 #include "app.h"
 #include "settings_json.h"
-#include "web_index.h"  // generated from web/index.html by scripts/embed_web.py
+#include "web_pages.h"  // generated from web/*.html by scripts/embed_web.py
 
 using namespace fancore;
 
@@ -30,34 +30,57 @@ void sendError(AsyncWebServerRequest* req, int code, const char* msg) {
     sendJson(req, doc, code);
 }
 
-void handleIndex(AsyncWebServerRequest* req) {
-    AsyncWebServerResponse* res = req->beginResponse(200, "text/html", WEB_INDEX_GZ, WEB_INDEX_GZ_LEN);
+void sendPage(AsyncWebServerRequest* req, const uint8_t* gz, size_t len) {
+    AsyncWebServerResponse* res = req->beginResponse(200, "text/html", gz, len);
     res->addHeader("Content-Encoding", "gzip");
     req->send(res);
 }
 
 void handleStatus(AsyncWebServerRequest* req) {
     app::Status st;
+    app::TestMode test;
     Mode mode;
     float setpoint;
+    FanType fanType;
     {
         app::Guard g;
         st = app::status;
+        test = app::test;
         mode = app::settings.mode;
         setpoint = app::settings.setpoint;
+        fanType = app::settings.fanType;
     }
 
     JsonDocument doc;
     if (st.haveTemp && !st.sensorFault) doc["temp"] = st.temp;
     else doc["temp"] = nullptr;
     doc["sensorFault"] = st.sensorFault;
+    doc["sensorCount"] = st.sensorCount;
+    doc["sensorId"] = st.sensorId;
     doc["duty"] = st.duty;
+    doc["fanOn"] = st.fanOn;
+    doc["switchOn"] = st.switchOn;
+    doc["kicking"] = st.kicking;
+    doc["fanType"] = fanTypeName(fanType);
+    doc["pinDuty"] = st.pinDuty;
+    doc["rpm"] = st.rpm;
+    doc["tachHz"] = st.tachHz;
+    doc["tachPulses"] = st.tachPulses;
     doc["target"] = st.target;
     doc["pid"] = st.pidOutput;
     doc["state"] = stateName(st.state);
     doc["active"] = st.active;
     doc["mode"] = modeName(mode);
     doc["setpoint"] = setpoint;
+    // Manual test mode. duty/on are the requested values, which may be newer
+    // than the output above (the control task applies them within 100 ms).
+    JsonObject t = doc["test"].to<JsonObject>();
+    const uint64_t now = app::nowMs();
+    t["active"] = test.active(now);
+    t["remainingMs"] = test.active(now) ? (uint32_t)(test.untilMs - now) : 0;
+    t["duty"] = test.duty;
+    t["on"] = test.on;
+    t["leaseMs"] = TEST_LEASE_MS;
     doc["timeValid"] = st.timeValid;
     if (st.timeValid) {
         char buf[32];
@@ -109,6 +132,47 @@ void handleHistory(AsyncWebServerRequest* req) {
     req->send(res);
 }
 
+// POST /api/test
+//   {"enable":true}   start test mode (from the current output), or renew it
+//   {"enable":false}  stop now: back to automatic control, with a fade
+//   {}                renew an active lease (the page's heartbeat)
+//   "duty":0..100 and "on":bool set the manual output (test mode must be active)
+// A request without "enable" while test mode isn't active gets 409, so a page
+// whose lease ran out learns that instead of silently restarting test mode.
+// Replies with the same JSON as /api/status.
+void handlePostTest(AsyncWebServerRequest* req, JsonVariant& json) {
+    if (!json.is<JsonObject>()) return sendError(req, 400, "expected a JSON object");
+    JsonObjectConst o = json.as<JsonObjectConst>();
+    if (!o["enable"].isNull() && !o["enable"].is<bool>()) return sendError(req, 400, "enable must be true/false");
+    if (!o["duty"].isNull() && (!o["duty"].is<float>() || o["duty"].as<float>() < 0 || o["duty"].as<float>() > 100))
+        return sendError(req, 400, "duty must be 0..100");
+    if (!o["on"].isNull() && !o["on"].is<bool>()) return sendError(req, 400, "on must be true/false");
+
+    enum { Ok, NotActive } result = Ok;
+    {
+        app::Guard g;
+        app::TestMode& t = app::test;
+        const uint64_t now = app::nowMs();
+        const bool wasActive = t.active(now);
+        if (o["enable"].is<bool>() && !o["enable"].as<bool>()) {
+            t.untilMs = 0;
+        } else if (!wasActive && !o["enable"].is<bool>()) {
+            result = NotActive;
+        } else {
+            if (!wasActive) {
+                // Bumpless start: begin from what the fan is doing now.
+                t.duty = app::status.duty;
+                t.on = app::status.fanOn;
+            }
+            t.untilMs = now + TEST_LEASE_MS;
+            if (o["duty"].is<float>()) t.duty = o["duty"].as<float>();
+            if (o["on"].is<bool>()) t.on = o["on"].as<bool>();
+        }
+    }
+    if (result == NotActive) return sendError(req, 409, "test mode is not active");
+    handleStatus(req);
+}
+
 void handleGetSettings(AsyncWebServerRequest* req) {
     JsonDocument doc;
     {
@@ -147,13 +211,17 @@ void handlePostSettings(AsyncWebServerRequest* req, JsonVariant& json) {
 namespace app {
 
 void webBegin() {
-    server.on("/", HTTP_GET, handleIndex);
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) { sendPage(req, WEB_INDEX_GZ, WEB_INDEX_GZ_LEN); });
+    server.on("/test", HTTP_GET, [](AsyncWebServerRequest* req) { sendPage(req, WEB_TEST_GZ, WEB_TEST_GZ_LEN); });
     server.on("/api/status", HTTP_GET, handleStatus);
     server.on("/api/history", HTTP_GET, handleHistory);
     server.on("/api/settings", HTTP_GET, handleGetSettings);
     auto* post = new AsyncCallbackJsonWebHandler("/api/settings", handlePostSettings);
     post->setMethod(HTTP_POST);
     server.addHandler(post);
+    auto* test = new AsyncCallbackJsonWebHandler("/api/test", handlePostTest);
+    test->setMethod(HTTP_POST);
+    server.addHandler(test);
     server.onNotFound([](AsyncWebServerRequest* req) { req->send(404, "text/plain", "not found"); });
     server.begin();
 }
