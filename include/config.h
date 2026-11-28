@@ -6,16 +6,21 @@
 // for anything that matters at boot. 8 = onboard RGB LED, 9 = BOOT button,
 // 12/13 = USB: not on the header anyway.
 #define PIN_DS18B20 0      // 1-wire data, 4.7k pull-up to 3.3V
-#define PIN_FAN_PWM 18     // to the open-collector driver for fan pin 4 (PWM)
-#define PIN_FAN_TACH 19    // from fan pin 3 (tach), pull-up to 3.3V
-#define PIN_FAN_SWITCH 20  // drives the transistor that switches the high-side P-MOSFET
+#define PIN_FAN_PWM 18     // 4-pin: to the open-collector driver for fan pin 4 (PWM)
+                           // 2/3-pin: to the MOSFET that switches the fans' supply
+#define PIN_FAN_TACH 19    // from fan pin 3 (tach), pull-up to 3.3V. Optional
+#define PIN_FAN_SWITCH 20  // 4-pin: drives the transistor that switches the high-side
+                           // P-MOSFET. Held off with 2/3-pin fans (fanType setting)
 
 // 1 if the switch GPIO goes HIGH to turn the fan supply on.
 #define FAN_SWITCH_ACTIVE_HIGH 1
 // PWM inversion (for the open-collector driver) is a setting: pwmInvert.
 
 // ---- Fan PWM ----
-#define FAN_PWM_FREQ_HZ 25000  // Intel 4-pin fan spec: 21-28 kHz
+// Intel 4-pin fan spec: 21-28 kHz. Most 2/3-pin fans also run fine with their
+// supply chopped at 25 kHz (silent, but their tach reads garbage while PWMed).
+// If one misbehaves, try a low frequency like 30-100 Hz instead (may tick).
+#define FAN_PWM_FREQ_HZ 25000
 #define FAN_PWM_BITS 10
 
 // ---- Tach ----

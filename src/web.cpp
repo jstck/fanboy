@@ -41,12 +41,14 @@ void handleStatus(AsyncWebServerRequest* req) {
     app::TestMode test;
     Mode mode;
     float setpoint;
+    FanType fanType;
     {
         app::Guard g;
         st = app::status;
         test = app::test;
         mode = app::settings.mode;
         setpoint = app::settings.setpoint;
+        fanType = app::settings.fanType;
     }
 
     JsonDocument doc;
@@ -57,6 +59,9 @@ void handleStatus(AsyncWebServerRequest* req) {
     doc["sensorId"] = st.sensorId;
     doc["duty"] = st.duty;
     doc["fanOn"] = st.fanOn;
+    doc["switchOn"] = st.switchOn;
+    doc["kicking"] = st.kicking;
+    doc["fanType"] = fanTypeName(fanType);
     doc["pinDuty"] = st.pinDuty;
     doc["rpm"] = st.rpm;
     doc["tachHz"] = st.tachHz;

@@ -3,6 +3,7 @@
 
 #include "controller.h"
 #include "history.h"
+#include "kickstart.h"
 #include "pid.h"
 #include "schedule.h"
 #include "settings_json.h"
@@ -131,6 +132,45 @@ void test_fader_timing_and_reversal() {
     TEST_ASSERT_FLOAT_WITHIN(0.01, 100, f.value());
 }
 
+void test_fader_floor() {
+    Fader f;
+    // Starting from 0 jumps to the floor, then fades on up (10 %/s).
+    f.step(60, 1, 10, 25);
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 25, f.value());
+    f.step(60, 1, 10, 25);
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 35, f.value());
+    // Fading out goes 35 -> 25, then straight to 0 rather than below the floor.
+    f.step(0, 1, 10, 25);
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 25, f.value());
+    f.step(0, 1, 10, 25);
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 0, f.value());
+    // A target below the floor (e.g. a low fault duty) is used as is.
+    f.step(10, 1, 10, 25);
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 10, f.value());
+}
+
+// ---------- kickstart ----------
+
+void test_kickstart() {
+    Kickstart k;
+    // From standstill: 75 % for 0.5 s (5 ticks of 0.1 s), then the real duty.
+    for (int i = 0; i < 5; i++) TEST_ASSERT_FLOAT_WITHIN(0.01, 75, k.apply(30, 75, 0.5f, 0.1f));
+    TEST_ASSERT_TRUE(k.kicking());
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 30, k.apply(30, 75, 0.5f, 0.1f));
+    TEST_ASSERT_FALSE(k.kicking());
+    // Already running: no kick when the duty changes.
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 20, k.apply(20, 75, 0.5f, 0.1f));
+    // Stopping cancels; the next start kicks again, even if stopped only briefly.
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 0, k.apply(0, 75, 0.5f, 0.1f));
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 75, k.apply(30, 75, 0.5f, 0.1f));
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 0, k.apply(0, 75, 0.5f, 0.1f));  // stop mid-kick
+    TEST_ASSERT_FALSE(k.kicking());
+    // A start above the kick duty isn't lowered, and kickSec 0 disables it.
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 90, k.apply(90, 75, 0.5f, 0.1f));
+    k.apply(0, 75, 0, 0.1f);
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 30, k.apply(30, 75, 0, 0.1f));
+}
+
 // ---------- controller ----------
 
 static Settings testSettings() {
@@ -161,8 +201,9 @@ static ControlInput tick(int minute, float temp, bool valid = true, int weekday 
     return in;
 }
 
-static void run(Controller& c, const Settings& s, int seconds, int minute, float temp, bool valid = true) {
-    for (int i = 0; i < seconds; i++) c.update(s, tick(minute, temp, valid));
+static void run(Controller& c, const Settings& s, int seconds, int minute, float temp, bool valid = true,
+                int weekday = MON) {
+    for (int i = 0; i < seconds; i++) c.update(s, tick(minute, temp, valid, weekday));
 }
 
 void test_controller_full_cycle() {
@@ -177,8 +218,8 @@ void test_controller_full_cycle() {
     c.update(s, tick(hm(21, 0), 22));
     TEST_ASSERT_EQUAL(State::FadingIn, c.state());
     TEST_ASSERT_FLOAT_WITHIN(0.01, 60, c.target());
-    TEST_ASSERT_FLOAT_WITHIN(0.01, 10, c.duty());
-    run(c, s, 10, hm(21, 1), 22);
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 25, c.duty());  // starts at min duty, not from 0
+    run(c, s, 4, hm(21, 1), 22);
     TEST_ASSERT_EQUAL(State::Regulating, c.state());
     TEST_ASSERT_FLOAT_WITHIN(0.01, 60, c.duty());
 
@@ -187,13 +228,29 @@ void test_controller_full_cycle() {
     TEST_ASSERT_FLOAT_WITHIN(0.01, 25, c.duty());
     TEST_ASSERT_EQUAL(State::Regulating, c.state());
 
-    // Window ends -> fade out to 0.
-    c.update(s, tick(hm(7, 0), 19, true, TUE));
+    // Warm again, then the window ends -> fade out from 60, stopping at min duty.
+    run(c, s, 10, hm(6, 59), 22, true, TUE);
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 60, c.duty());
+    c.update(s, tick(hm(7, 0), 22, true, TUE));
     TEST_ASSERT_EQUAL(State::FadingOut, c.state());
-    TEST_ASSERT_FLOAT_WITHIN(0.01, 15, c.duty());
-    for (int i = 0; i < 5; i++) c.update(s, tick(hm(7, 0), 19, true, TUE));
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 50, c.duty());
+    for (int i = 0; i < 2; i++) c.update(s, tick(hm(7, 0), 22, true, TUE));
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 30, c.duty());
+    c.update(s, tick(hm(7, 0), 22, true, TUE));
     TEST_ASSERT_EQUAL(State::Idle, c.state());
     TEST_ASSERT_FLOAT_WITHIN(0.01, 0, c.duty());
+}
+
+void test_controller_heating_direction() {
+    Controller c;
+    Settings s = testSettings();
+    s.fadeSec = 0;
+    s.mode = Mode::On;
+    s.direction = Direction::Heat;
+    run(c, s, 2, hm(12, 0), 18);  // 2 °C below setpoint -> 60 %
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 60, c.duty());
+    run(c, s, 2, hm(12, 0), 22);  // above setpoint -> min duty
+    TEST_ASSERT_FLOAT_WITHIN(0.01, 25, c.duty());
 }
 
 void test_controller_auto_needs_time_sync() {
@@ -388,6 +445,17 @@ void test_settings_roundtrip() {
     TEST_ASSERT_EQUAL_STRING("", settingsFromJson(doc.as<JsonObjectConst>(), Settings{}, back).c_str());
     TEST_ASSERT_FALSE(back.pwmInvert);
     TEST_ASSERT_EQUAL(4, back.tachPpr);
+
+    s.direction = Direction::Heat;
+    s.fanType = FanType::ThreePin;
+    s.kickDuty = 90;
+    s.kickSec = 1.5f;
+    settingsToJson(s, doc.to<JsonObject>());
+    TEST_ASSERT_EQUAL_STRING("", settingsFromJson(doc.as<JsonObjectConst>(), Settings{}, back).c_str());
+    TEST_ASSERT_EQUAL(Direction::Heat, back.direction);
+    TEST_ASSERT_EQUAL(FanType::ThreePin, back.fanType);
+    TEST_ASSERT_FLOAT_WITHIN(0.001, 90, back.kickDuty);
+    TEST_ASSERT_FLOAT_WITHIN(0.001, 1.5, back.kickSec);
 }
 
 static std::string applyJson(const char* json, Settings& out) {
@@ -413,6 +481,10 @@ void test_settings_partial_update_and_rejects() {
     TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"tachPpr\":9}", untouched).size());
     TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"tachPpr\":2.5}", untouched).size());
     TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"pwmInvert\":1}", untouched).size());
+    TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"direction\":\"up\"}", untouched).size());
+    TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"fanType\":\"2pin\"}", untouched).size());
+    TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"kickDuty\":101}", untouched).size());
+    TEST_ASSERT_NOT_EQUAL(0, applyJson("{\"kickSec\":-1}", untouched).size());
     TEST_ASSERT_NOT_EQUAL(0, applyJson(
         "{\"schedule\":[{\"start\":\"25:00\"},{},{},{},{},{},{}]}", untouched).size());
     TEST_ASSERT_FLOAT_WITHIN(0.001, 12, untouched.setpoint);  // failed updates don't write
@@ -438,7 +510,10 @@ int main() {
     RUN_TEST(test_pid_anti_windup);
     RUN_TEST(test_pid_integral_does_not_go_negative);
     RUN_TEST(test_fader_timing_and_reversal);
+    RUN_TEST(test_fader_floor);
+    RUN_TEST(test_kickstart);
     RUN_TEST(test_controller_full_cycle);
+    RUN_TEST(test_controller_heating_direction);
     RUN_TEST(test_controller_auto_needs_time_sync);
     RUN_TEST(test_controller_sensor_fault_fallback);
     RUN_TEST(test_controller_allow_stop_hysteresis);

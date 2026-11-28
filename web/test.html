@@ -42,7 +42,7 @@ a { color: var(--accent); }
 .banner.ended { display: block; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
 fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 fieldset:disabled { opacity: .5; }
-input { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+input, select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
 input[type=range] { width: 100%; accent-color: var(--accent); padding: 0; border: 0; background: none; margin-top: 10px; }
 input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 .duty { display: flex; align-items: baseline; gap: 6px; }
@@ -96,7 +96,7 @@ label.chk { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   <section class="card">
     <h2>Manual control</h2>
     <fieldset id="manual" disabled>
-      <div class="row">
+      <div class="row" id="swRow">
         <div><div class="label">Fan supply</div><div class="sub">High-side switch</div></div>
         <button class="btn toggle" id="sw" type="button">–</button>
       </div>
@@ -106,12 +106,30 @@ label.chk { display: flex; align-items: center; gap: 8px; cursor: pointer; }
       </div>
       <input type="range" id="duty" min="0" max="100" step="1">
     </fieldset>
-    <div class="hint">Enable test mode to use these. Duty is as seen by the fan, after any inversion.</div>
+    <div class="hint">Enable test mode to use these. Duty is as seen by the fan, after any inversion. <span id="manualKickHint"></span></div>
   </section>
 
   <section class="card">
     <h2>Fan hardware (saved)</h2>
     <div class="row">
+      <label for="fanType">Fan type</label>
+      <select id="fanType">
+        <option value="4pin">4-pin: PWM pin + supply switch</option>
+        <option value="3pin">2/3-pin: PWM on the supply, no switch</option>
+      </select>
+    </div>
+    <div id="kickRows">
+      <div class="row" style="margin-top:12px">
+        <label for="kickDuty">Kickstart duty %</label>
+        <input type="number" id="kickDuty" min="0" max="100" step="1" style="width:70px">
+      </div>
+      <div class="row" style="margin-top:12px">
+        <label for="kickSec">Kickstart time (s, 0 = off)</label>
+        <input type="number" id="kickSec" min="0" max="5" step="0.1" style="width:70px">
+      </div>
+      <div class="hint">Starting from standstill, the fans run at the kickstart duty for this long so they get going, then at the requested duty. Bigger fans tend to need more.</div>
+    </div>
+    <div class="row" style="margin-top:12px">
       <label class="chk"><input type="checkbox" id="inv"> Invert PWM output (inverting / open-collector driver)</label>
     </div>
     <div class="row" style="margin-top:12px">
@@ -170,8 +188,13 @@ function render(s) {
   $("rpm").textContent = Math.round(s.rpm) + " rpm";
   $("tach").textContent = `${s.tachHz.toFixed(1)} Hz · ${s.tachPulses} pulses`;
 
+  const fourPin = s.fanType === "4pin";
   $("out").textContent = s.fanOn ? Math.round(s.duty) + " %" : "off";
-  $("outSub").textContent = s.fanOn ? `GPIO duty ${Math.round(s.pinDuty)} %` : `supply off · PWM ${Math.round(s.duty)} %`;
+  $("outSub").textContent = s.kicking ? `kickstart · GPIO duty ${Math.round(s.pinDuty)} %`
+    : s.fanOn ? `GPIO duty ${Math.round(s.pinDuty)} %`
+    : fourPin ? `supply off · PWM ${Math.round(s.duty)} %` : `GPIO duty ${Math.round(s.pinDuty)} %`;
+  $("swRow").style.display = fourPin ? "" : "none";
+  $("manualKickHint").textContent = fourPin ? "" : "Starting from 0 % uses the kickstart.";
 
   // Manual controls show the requested test values while active, else the live output.
   $("manual").disabled = !testOn;
@@ -269,7 +292,14 @@ $("dutyNum").addEventListener("change", () => dutyFromBox(true));
 $("dutyNum").addEventListener("keydown", e => { if (e.key === "Enter") e.target.blur(); });
 
 // ---------- hardware settings (persistent, via /api/settings) ----------
-function fillHw(s) { $("inv").checked = s.pwmInvert; $("ppr").value = s.tachPpr; }
+function fillHw(s) {
+  $("fanType").value = s.fanType;
+  $("kickRows").style.display = s.fanType === "3pin" ? "" : "none";
+  $("kickDuty").value = s.kickDuty;
+  $("kickSec").value = s.kickSec;
+  $("inv").checked = s.pwmInvert;
+  $("ppr").value = s.tachPpr;
+}
 async function saveHw(body) {
   const m = $("hwMsg");
   try {
@@ -281,7 +311,13 @@ async function saveHw(body) {
     api("/api/settings").then(fillHw).catch(() => {});
   }
 }
+$("fanType").addEventListener("change", e => saveHw({ fanType: e.target.value }));
 $("inv").addEventListener("change", e => saveHw({ pwmInvert: e.target.checked }));
+for (const k of ["kickDuty", "kickSec"]) $(k).addEventListener("change", e => {
+  const v = parseFloat(e.target.value);
+  if (isNaN(v)) { $("hwMsg").className = "msg err"; $("hwMsg").textContent = "Enter a number"; return; }
+  saveHw({ [k]: v });
+});
 $("ppr").addEventListener("change", e => {
   const v = parseInt(e.target.value, 10);
   if (isNaN(v)) { $("hwMsg").className = "msg err"; $("hwMsg").textContent = "Enter a whole number 1–8"; return; }

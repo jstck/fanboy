@@ -19,8 +19,10 @@ struct Status {
     bool sensorFault = false;
     int sensorCount = 0;
     char sensorId[24] = "";  // ROM ID of the sensor in use, hex bytes
-    float duty = 0;          // % as seen by the fan
-    bool fanOn = false;      // supply switch
+    float duty = 0;          // % as seen by the fan, including any kickstart
+    bool fanOn = false;      // fan meant to run (4-pin: supply switch requested on)
+    bool switchOn = false;   // supply switch output (always off for 2/3-pin fans)
+    bool kicking = false;    // 2/3-pin kickstart in progress
     float pinDuty = 0;       // % on the PWM GPIO (after inversion)
     float rpm = 0;
     float tachHz = 0;

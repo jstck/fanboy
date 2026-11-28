@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "app.h"
+#include "kickstart.h"
 #include "tach.h"
 
 using namespace fancore;
@@ -106,7 +107,7 @@ void fanBegin() {
     attachInterrupt(digitalPinToInterrupt(PIN_FAN_TACH), onTach, FALLING);
 }
 
-// duty: % as seen by the fan. Returns the duty on the GPIO itself.
+// duty: % as seen by the fan. on: supply switch. Returns the duty on the GPIO itself.
 float fanApply(float duty, bool on, bool invert) {
     const float pin = invert ? 100.0f - duty : duty;
     const uint32_t maxVal = 1u << FAN_PWM_BITS;  // LEDC treats 2^bits as 100 %
@@ -129,6 +130,7 @@ void controlTask(void*) {
     Controller controller;
     HistoryAverager avg;
     TachMeter tach;
+    Kickstart kick;
     uint32_t last = millis(), lastTach = last;
     uint32_t nextHistory = app::uptimeSec() + HISTORY_INTERVAL_SEC;
     bool wasTesting = false;
@@ -160,7 +162,7 @@ void controlTask(void*) {
 
         const uint32_t up = app::uptimeSec();
         float duty;
-        bool fanOn, invert;
+        bool fanOn, switchOn, invert;
         {
             app::Guard g;
             const time_t now = time(nullptr);
@@ -188,16 +190,24 @@ void controlTask(void*) {
             if (controller.state() != prev && !testing)
                 Serial.printf("state: %s -> %s\n", stateName(prev), stateName(controller.state()));
 
+            const Settings& cfg = app::settings;
+            const bool fourPin = cfg.fanType == FanType::FourPin;
             if (testing) {
                 duty = app::test.duty;
-                fanOn = app::test.on;
+                // 2/3-pin fans have no switch: the PWM alone runs or stops them.
+                fanOn = fourPin ? app::test.on : duty > 0;
                 testOutput = fanOn ? duty : 0;
             } else {
                 duty = controller.duty();
                 // 4-pin fans keep spinning at 0 % PWM, so cut the supply when idle.
                 fanOn = duty > 0;
             }
-            invert = app::settings.pwmInvert;
+            // 2/3-pin fans may not start at low duty: kick them from standstill.
+            // This applies in test mode too, so the kick settings can be tried.
+            if (!fourPin) duty = kick.apply(duty, cfg.kickDuty, cfg.kickSec, dt);
+            else kick.apply(0, 0, 0, dt);  // reset, so a later switch to 2/3-pin kicks
+            switchOn = fourPin && fanOn;
+            invert = cfg.pwmInvert;
 
             app::Status& s = app::status;
             s.haveTemp = controller.haveTemp();
@@ -207,6 +217,8 @@ void controlTask(void*) {
             strlcpy(s.sensorId, sensor.id(), sizeof s.sensorId);
             s.duty = duty;
             s.fanOn = fanOn;
+            s.switchOn = switchOn;
+            s.kicking = kick.kicking();
             s.pinDuty = invert ? 100.0f - duty : duty;
             s.target = controller.target();
             s.pidOutput = controller.pidOutput();
@@ -228,7 +240,7 @@ void controlTask(void*) {
                 nextHistory += HISTORY_INTERVAL_SEC;
             }
         }
-        fanApply(duty, fanOn, invert);
+        fanApply(duty, switchOn, invert);
     }
 }
 

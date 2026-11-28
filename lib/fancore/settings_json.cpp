@@ -21,6 +21,7 @@ std::string formatHhMm(int minutes) {
 
 void settingsToJson(const Settings& s, JsonObject o) {
     o["setpoint"] = s.setpoint;
+    o["direction"] = directionName(s.direction);
     o["kp"] = s.kp;
     o["ki"] = s.ki;
     o["kd"] = s.kd;
@@ -29,8 +30,11 @@ void settingsToJson(const Settings& s, JsonObject o) {
     o["fadeSec"] = s.fadeSec;
     o["allowStop"] = s.allowStop;
     o["fallbackDuty"] = s.fallbackDuty;
+    o["fanType"] = fanTypeName(s.fanType);
     o["pwmInvert"] = s.pwmInvert;
     o["tachPpr"] = s.tachPpr;
+    o["kickDuty"] = s.kickDuty;
+    o["kickSec"] = s.kickSec;
     o["mode"] = modeName(s.mode);
     o["tz"] = s.tz.c_str();
     JsonArray days = o["schedule"].to<JsonArray>();
@@ -60,7 +64,8 @@ std::string settingsFromJson(JsonObjectConst in, const Settings& current, Settin
     } floats[] = {
         {"setpoint", &s.setpoint}, {"kp", &s.kp},           {"ki", &s.ki},
         {"kd", &s.kd},             {"minDuty", &s.minDuty}, {"maxDuty", &s.maxDuty},
-        {"fadeSec", &s.fadeSec},   {"fallbackDuty", &s.fallbackDuty},
+        {"fadeSec", &s.fadeSec},   {"fallbackDuty", &s.fallbackDuty}, {"kickDuty", &s.kickDuty},
+        {"kickSec", &s.kickSec},
     };
     for (auto& f : floats)
         if (!readFloat(in, f.key, *f.dst)) return std::string(f.key) + " must be a number";
@@ -76,6 +81,12 @@ std::string settingsFromJson(JsonObjectConst in, const Settings& current, Settin
     if (!in["tachPpr"].isNull()) {
         if (!in["tachPpr"].is<int>()) return "tachPpr must be a whole number";
         s.tachPpr = in["tachPpr"].as<int>();
+    }
+    if (!in["direction"].isNull()) {
+        if (!directionFromName(in["direction"].as<const char*>(), s.direction)) return "direction must be cool/heat";
+    }
+    if (!in["fanType"].isNull()) {
+        if (!fanTypeFromName(in["fanType"].as<const char*>(), s.fanType)) return "fanType must be 4pin/3pin";
     }
     if (!in["mode"].isNull()) {
         if (!modeFromName(in["mode"].as<const char*>(), s.mode)) return "mode must be auto/on/off";
