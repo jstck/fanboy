@@ -90,7 +90,7 @@ The DS18B20 is sampled every 2 s. Fan control runs in its own FreeRTOS task, upd
 
 ```sh
 cp hwtest/include/hwtest_config.example.h hwtest/include/hwtest_config.h   # WiFi, DHCP/static IP, pins, polarities
-pio run -d hwtest -t upload && pio device monitor -d hwtest
+(cd hwtest && pio run -t upload && pio device monitor)
 ```
 
 Then open `http://fanboy-test.local` or the IP shown on the serial monitor. *Pulses per revolution* (default 2) and *Invert PWM output* (for an inverting driver stage such as an open-collector transistor) are set in the UI and kept across reboots. The config file also has notes on which ESP32-C6-Zero pins to use.
